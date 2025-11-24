@@ -1,6 +1,6 @@
 from typing import Optional, List
 from fastapi import HTTPException, status
-from app.config import settings, keycloak_openid
+from .config import keycloak_openid, settings
 
 
 async def get_idp_public_key() -> str:
@@ -28,9 +28,14 @@ async def decode_token(token: str) -> dict:
             key=public_key,
             options={
                 "verify_signature": True,
-                "verify_aud": False,
-                "exp": True
-            }
+                "verify_aud": True,
+                "verify_exp": True,
+                "verify_iss": True,
+                "verify_iat": True,
+                "verify_nbf": True,
+                "audience": settings.keycloak_client_id
+            },
+            issuer=f"{settings.keycloak_public_url}/realms/{settings.keycloak_realm}"
         )
         return payload
     except Exception as e:
@@ -44,22 +49,25 @@ async def decode_token(token: str) -> dict:
 def get_user_roles(token_payload: dict) -> List[str]:
     """Извлечение ролей пользователя из токена"""
     roles = []
-    
-    if "realm_access" in token_payload and "roles" in token_payload["realm_access"]:
-        roles.extend(token_payload["realm_access"]["roles"])
-    
+
+    if "realm_access" in token_payload:
+        roles.extend(token_payload["realm_access"].get("roles", []))
+
+    if "resource_access" in token_payload:
+        for client, data in token_payload["resource_access"].items():
+            roles.extend(data.get("roles", []))
+
     return roles
 
 
-async def verify_token_and_get_roles(authorization: Optional[str]) -> List[str]:
-    """Проверяет токен и возвращает роли пользователя"""
+async def verify_token(authorization: Optional[str]) -> List[str]:
+    """Проверяет токен"""
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Отсутствует заголовок Authorization",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
     try:
         scheme, token = authorization.split()
         if scheme.lower() != "bearer":
@@ -74,7 +82,13 @@ async def verify_token_and_get_roles(authorization: Optional[str]) -> List[str]:
             detail="Неверный формат заголовка Authorization",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    return token
+
+
+async def get_roles(authorization: Optional[str]) -> List[str]:
+    """возвращает роли пользователя"""
     
+    token = await verify_token(authorization)
     token_payload = await decode_token(token)
     roles = get_user_roles(token_payload)
     

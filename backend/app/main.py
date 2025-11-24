@@ -1,6 +1,6 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends
 from typing import List
-from app.dependencies import require_user_role, require_admin_role
+from .dependencies import require_user_role, require_admin_role
 
 
 app = FastAPI(title="Keycloak JWT Auth API", version="1.0.0")
